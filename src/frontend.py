@@ -4,10 +4,17 @@ from time import gmtime, strftime, time
 
 from .factor_graph import FactorGraph
 from .backend import Backend as LoopClosing
+from .predict_init_pose import PoseNetwork
 
 
 class Frontend:
     def __init__(self, net, video, args, cfg):
+        #pose predict init
+        self.pose_train_amount = 1000
+        self.pose_network = PoseNetwork()
+        self.pose_trained = False
+        self.pose_lag = 10
+        #original init
         self.video = video
         self.update_op = net.update
         self.warmup = cfg['tracking']['warmup']
@@ -90,8 +97,15 @@ class Frontend:
                 for itr in range(self.iters2):
                     self.graph.update(t0=None, t1=None, use_inactive=True)
 
-        # set pose for next iteration
-        self.video.poses[self.t1] = self.video.poses[self.t1-1]
+        # set pose for next iteration: nn predict
+        if self.t1 < self.pose_train_amount:
+            self.video.poses[self.t1] = self.video.poses[self.t1-1]
+        else:
+            if not self.pose_trained:
+                self.pose_network.pose_train(self.video.poses)
+                self.pose_trained = True
+            self.video.poses[self.t1] = self.pose_network.pose_predict(self.video.poses[self.t1-self.pose_lag:self.t1])
+
         self.video.disps[self.t1] = self.video.disps[self.t1-1].mean()
 
         # update visualization
